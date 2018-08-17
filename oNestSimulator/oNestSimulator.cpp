@@ -48,8 +48,8 @@ INT_PTR CALLBACK    DlgProc(HWND hdlg, UINT msg, WPARAM wParam, LPARAM lParam); 
 int getEditBoxText(HWND hdlg, int ID);
 int oNestSimulator(cluster_configuration cluster);
 BOOL AddListViewItems(HWND hwndListView);
-int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, double para3, double para4);
-int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, TCHAR para3[4096], TCHAR para4[4096]);
+int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, double para3, double para4, double para5);
+int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, TCHAR para3[4096], TCHAR para4[4096], TCHAR para5[4096]);
 
 /*============================== WinMain ==============================*/
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -174,7 +174,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// 设置标题字体样式：这部分必须放在主窗口处理
 		LOGFONT TitleFont;
 		ZeroMemory(&TitleFont, sizeof(TitleFont));                    // 这个必须做，清除乱七八糟的初值
-		lstrcpy(TitleFont.lfFaceName, L"Microsoft Yahei");               // 设置字体
+		lstrcpy(TitleFont.lfFaceName, L"Microsoft Yahei");            // 设置字体
 		TitleFont.lfWeight = FW_BOLD;                                 // 粗细，BOLD=700，写过CSS都知道
 		TitleFont.lfHeight = -16;                                     // 字体大小，这个很有讲究……
 		TitleFont.lfCharSet = DEFAULT_CHARSET;                        // 默认字符集
@@ -244,32 +244,38 @@ INT_PTR CALLBACK DlgProc(HWND hdlg, UINT msg, WPARAM wParam, LPARAM lParam)
 		lvc.iSubItem = 0;                // 子项索引，第一列无子项 (0) 
 		lvc.fmt = LVCFMT_CENTER;
 		ListView_InsertColumn(hListview, 0, &lvc);   // 第一列要废掉
-		lvc.cx = 80;
+		lvc.cx = 70;
 		ListView_InsertColumn(hListview, 1, &lvc);
 
 		lvc.pszText = L"业务网上行";
-		lvc.cx = 80;
+		lvc.cx = 70;
 		lvc.iSubItem = 1;               // 子项索引  
 		lvc.fmt = LVCFMT_CENTER;
 		ListView_InsertColumn(hListview, 2, &lvc);
 
 		lvc.pszText = L"业务网下行";
-		lvc.cx = 80;
+		lvc.cx = 70;
 		lvc.iSubItem = 2;
 		lvc.fmt = LVCFMT_CENTER;
 		ListView_InsertColumn(hListview, 3, &lvc);
 
 		lvc.pszText = L"存储网上行";
-		lvc.cx = 80;
+		lvc.cx = 70;
 		lvc.iSubItem = 3;
 		lvc.fmt = LVCFMT_CENTER;
 		ListView_InsertColumn(hListview, 4, &lvc);
 
 		lvc.pszText = L"存储网下行";
-		lvc.cx = 80;
+		lvc.cx = 70;
 		lvc.iSubItem = 4;
 		lvc.fmt = LVCFMT_CENTER;
 		ListView_InsertColumn(hListview, 5, &lvc);
+
+		lvc.pszText = L"lo网卡";
+		lvc.cx = 70;
+		lvc.iSubItem = 5;
+		lvc.fmt = LVCFMT_CENTER;
+		ListView_InsertColumn(hListview, 6, &lvc);
 
 		//填充下拉列表
 		hWndComboBox = GetDlgItem(hdlg, IDC_COMBO_REP);
@@ -494,20 +500,27 @@ int oNestSimulator(cluster_configuration cluster)
 	// 负载均衡：输入即输出，全量转发
 	// 需要判断是否有LB，因为负载均衡节点不是必备
 	// 需要合并考虑独立和混部的LB
-	if (cluster.lb_cnt > 0 || cluster.osd_cnt > 0)
+	if (cluster.lb_cnt > 0 || cluster.osd_lb_mixcnt > 0)
 	{
 
 		result.lb_pub_downlink = factor;
 		result.lb_pub_uplink = result.lb_pub_downlink;
 		max = result.lb_pub_downlink;
-	}
 
-	// RGW节点，首先统计单独和混部加起来多少RGW
-	// 同样输入即输出，输入值=LB数量*factor/RGW数量
-	// RGW必备，无需判断
-	result.rgw_pub_downlink = (cluster.lb_cnt + cluster.osd_lb_mixcnt)*factor / (cluster.rgw_cnt + cluster.osd_rgw_mixcnt);
-	result.rgw_pub_uplink = result.rgw_pub_downlink;
-	if (result.rgw_pub_downlink > max)max = result.rgw_pub_downlink;
+		// RGW节点，首先统计单独和混部加起来多少RGW
+		// 同样输入即输出，输入值=LB数量*factor/RGW数量
+		// RGW必备，无需判断
+		result.rgw_pub_downlink = (cluster.lb_cnt + cluster.osd_lb_mixcnt)*factor / (cluster.rgw_cnt + cluster.osd_rgw_mixcnt);
+		result.rgw_pub_uplink = result.rgw_pub_downlink;
+		if (result.rgw_pub_downlink > max)max = result.rgw_pub_downlink;
+	}
+	else
+	{
+		// 没有负载均衡，则直接给RGW
+		result.rgw_pub_downlink = factor;
+		result.rgw_pub_uplink = result.rgw_pub_downlink;
+		max = result.rgw_pub_downlink;
+	}
 
 	// OSD节点，同样需要考虑单独和混部
 	// 业务网下行=单个RGW出口流量*RGW数量/OSD数量
@@ -536,7 +549,7 @@ int oNestSimulator(cluster_configuration cluster)
 
 	// 混部节点业务网的处理，包括OSD+RGW，OSD+LB
 	// 直接将业务网与存储网对应流量相加就好了
-	// 这里不需要考虑到底有没有混部，反正加就是
+	// OSD+RGW，需要处理一下lo（后面再扣除，这节不管）
 	result.osd_rgw_pub_downlink = result.osd_pub_downlink + result.rgw_pub_downlink;
 	if (result.osd_rgw_pub_downlink > max)max = result.osd_rgw_pub_downlink;
 	result.osd_rgw_pub_uplink = result.osd_pub_uplink + result.rgw_pub_uplink;
@@ -623,8 +636,11 @@ int oNestSimulator(cluster_configuration cluster)
 	result.osd_cluster_downlink *= factor;
 
 	// 再补上混部节点的流量
-	result.osd_rgw_pub_downlink = result.osd_pub_downlink + result.rgw_pub_downlink - result.rgw_pub_downlink / (cluster.osd_cnt + cluster.osd_lb_mixcnt + cluster.osd_rgw_mixcnt);
-	result.osd_rgw_pub_uplink = result.osd_pub_uplink + result.rgw_pub_uplink;
+	// 这里扣除OSD/RGW的lo网卡
+	// 注意先算lo，顺序不能颠倒
+	result.osd_rgw_lo = result.rgw_pub_uplink / (cluster.osd_cnt + cluster.osd_lb_mixcnt + cluster.osd_rgw_mixcnt);
+	result.osd_rgw_pub_downlink = result.osd_pub_downlink + result.rgw_pub_downlink;
+	result.osd_rgw_pub_uplink = result.osd_pub_uplink + result.rgw_pub_uplink - result.osd_rgw_lo;
 	result.osd_rgw_cluster_downlink = result.osd_cluster_downlink;
 	result.osd_rgw_cluster_uplink = result.osd_cluster_uplink;
 
@@ -656,7 +672,15 @@ int oNestSimulator(cluster_configuration cluster)
 	}
 
 	// 最后，整个集群的出口流量等于所有负载均衡节点出口之和
-	result.cluster_max_flow = result.lb_pub_downlink*(cluster.lb_cnt + cluster.osd_lb_mixcnt);
+	// 还是需要考虑是否有负载均衡的情况
+	if (cluster.lb_cnt + cluster.osd_lb_mixcnt > 0)
+	{
+		result.cluster_max_flow = result.lb_pub_downlink*(cluster.lb_cnt + cluster.osd_lb_mixcnt);
+	}
+	else
+	{
+		result.cluster_max_flow = result.rgw_pub_downlink*(cluster.rgw_cnt + cluster.osd_rgw_mixcnt);
+	}
 
 	return bottleNeck;
 }
@@ -680,163 +704,103 @@ BOOL AddListViewItems(HWND hwndListView)
 	// 插入数据
 	if (cluster_conf.lb_cnt > 0)
 	{
-		//ListView_InsertItem(hwndListView, &lvi);
-		//ListView_SetItemText(hwndListView, 0, 1, L"LB");
-		//swprintf(szBuff, L"%f", result.lb_pub_uplink);
-		//ListView_SetItemText(hwndListView, 0, 2, szBuff);
-		//swprintf(szBuff, L"%f", result.lb_pub_downlink);
-		//ListView_SetItemText(hwndListView, 0, 3, szBuff);
 		if (!cluster_conf.divided_network)
 		{
-			//ListView_SetItemText(hwndListView, 0, 4, L"-");
-			//ListView_SetItemText(hwndListView, 0, 5, L"-");
-			itemTextSet(hwndListView, lvi, L"LB", result.lb_pub_uplink, result.lb_pub_downlink, L"-", L"-");
+			itemTextSet(hwndListView, lvi, L"LB", result.lb_pub_uplink, result.lb_pub_downlink, L"-", L"-", L"-");
 		}
 		else
 		{
-			//ListView_SetItemText(hwndListView, 0, 4, L"0");
-			//ListView_SetItemText(hwndListView, 0, 5, L"0");
-			itemTextSet(hwndListView, lvi, L"LB", result.lb_pub_uplink, result.lb_pub_downlink, 0.0, 0.0);
+			itemTextSet(hwndListView, lvi, L"LB", result.lb_pub_uplink, result.lb_pub_downlink, 0.0, 0.0, 0.0);
 		}
 	}
 
 	if (cluster_conf.rgw_cnt > 0)
 	{
-		ListView_InsertItem(hwndListView, &lvi);
-		ListView_SetItemText(hwndListView, 0, 1, L"RGW");
-		swprintf(szBuff, L"%f", result.rgw_pub_uplink);
-		ListView_SetItemText(hwndListView, 0, 2, szBuff);
-		swprintf(szBuff, L"%f", result.rgw_pub_downlink);
-		ListView_SetItemText(hwndListView, 0, 3, szBuff);
 
 		if (!cluster_conf.divided_network)
 		{
-			ListView_SetItemText(hwndListView, 0, 4, L"-");
-			ListView_SetItemText(hwndListView, 0, 5, L"-");
+			itemTextSet(hwndListView, lvi, L"RGW", result.rgw_pub_uplink, result.rgw_pub_downlink, L"-", L"-", L"-");
 		}
 		else
 		{
-			ListView_SetItemText(hwndListView, 0, 4, L"0");
-			ListView_SetItemText(hwndListView, 0, 5, L"0");
+			itemTextSet(hwndListView, lvi, L"RGW", result.rgw_pub_uplink, result.rgw_pub_downlink, 0.0, 0.0, 0.0);
 		}
 	}
 
 	if (cluster_conf.osd_cnt > 0)
 	{
-		ListView_InsertItem(hwndListView, &lvi);
-		ListView_SetItemText(hwndListView, 0, 1, L"OSD");
-
 		if (!cluster_conf.divided_network)
 		{
-			swprintf(szBuff, L"%f", result.osd_uplink);
-			ListView_SetItemText(hwndListView, 0, 2, szBuff);
-			swprintf(szBuff, L"%f", result.osd_downlink);
-			ListView_SetItemText(hwndListView, 0, 3, szBuff);
-			ListView_SetItemText(hwndListView, 0, 4, L"-");
-			ListView_SetItemText(hwndListView, 0, 5, L"-");
+			itemTextSet(hwndListView, lvi, L"OSD", result.osd_uplink, result.osd_downlink, L"-", L"-", L"-");
 		}
 		else
 		{
-			swprintf(szBuff, L"%f", result.osd_pub_uplink);
-			ListView_SetItemText(hwndListView, 0, 2, szBuff);
-			swprintf(szBuff, L"%f", result.osd_pub_downlink);
-			ListView_SetItemText(hwndListView, 0, 3, szBuff);
-			swprintf(szBuff, L"%f", result.osd_cluster_uplink);
-			ListView_SetItemText(hwndListView, 0, 4, szBuff);
-			swprintf(szBuff, L"%f", result.osd_cluster_downlink);
-			ListView_SetItemText(hwndListView, 0, 5, szBuff);
+			itemTextSet(hwndListView, lvi, L"OSD", result.osd_pub_uplink, result.osd_pub_downlink, result.osd_cluster_uplink, result.osd_cluster_downlink, 0.0);
 		}
 	}
 
 	if (cluster_conf.osd_lb_mixcnt > 0)
 	{
-		ListView_InsertItem(hwndListView, &lvi);
-		ListView_SetItemText(hwndListView, 0, 1, L"OSD/LB");
-
 		if (!cluster_conf.divided_network)
 		{
-			swprintf(szBuff, L"%f", result.osd_lb_uplink);
-			ListView_SetItemText(hwndListView, 0, 2, szBuff);
-			swprintf(szBuff, L"%f", result.osd_lb_downlink);
-			ListView_SetItemText(hwndListView, 0, 3, szBuff);
-			ListView_SetItemText(hwndListView, 0, 4, L"-");
-			ListView_SetItemText(hwndListView, 0, 5, L"-");
+			itemTextSet(hwndListView, lvi, L"OSD/LB", result.osd_lb_uplink, result.osd_lb_downlink, L"-", L"-", L"-");
 		}
 		else
 		{
-			swprintf(szBuff, L"%f", result.osd_lb_pub_uplink);
-			ListView_SetItemText(hwndListView, 0, 2, szBuff);
-			swprintf(szBuff, L"%f", result.osd_lb_pub_downlink);
-			ListView_SetItemText(hwndListView, 0, 3, szBuff);
-			swprintf(szBuff, L"%f", result.osd_lb_cluster_uplink);
-			ListView_SetItemText(hwndListView, 0, 4, szBuff);
-			swprintf(szBuff, L"%f", result.osd_lb_cluster_downlink);
-			ListView_SetItemText(hwndListView, 0, 5, szBuff);
+			itemTextSet(hwndListView, lvi, L"OSD/LB", result.osd_lb_pub_uplink, result.osd_lb_pub_downlink, result.osd_lb_cluster_uplink, result.osd_lb_cluster_downlink, 0.0);
 		}
 	}
 
 	if (cluster_conf.osd_rgw_mixcnt > 0)
 	{
-		ListView_InsertItem(hwndListView, &lvi);
-		ListView_SetItemText(hwndListView, 0, 1, L"OSD/RGW");
-
 		if (!cluster_conf.divided_network)
 		{
-			swprintf(szBuff, L"%f", result.osd_rgw_uplink);
-			ListView_SetItemText(hwndListView, 0, 2, szBuff);
-			swprintf(szBuff, L"%f", result.osd_rgw_downlink);
-			ListView_SetItemText(hwndListView, 0, 3, szBuff);
-			ListView_SetItemText(hwndListView, 0, 4, L"-");
-			ListView_SetItemText(hwndListView, 0, 5, L"-");
+			itemTextSet(hwndListView, lvi, L"OSD/RGW", result.osd_rgw_uplink, result.osd_rgw_downlink, L"-", L"-", L"-");
 		}
 		else
 		{
-			swprintf(szBuff, L"%f", result.osd_rgw_pub_uplink);
-			ListView_SetItemText(hwndListView, 0, 2, szBuff);
-			swprintf(szBuff, L"%f", result.osd_rgw_pub_downlink);
-			ListView_SetItemText(hwndListView, 0, 3, szBuff);
-			swprintf(szBuff, L"%f", result.osd_rgw_cluster_uplink);
-			ListView_SetItemText(hwndListView, 0, 4, szBuff);
-			swprintf(szBuff, L"%f", result.osd_rgw_cluster_downlink);
-			ListView_SetItemText(hwndListView, 0, 5, szBuff);
+			itemTextSet(hwndListView, lvi, L"OSD/RGW", result.osd_rgw_pub_uplink, result.osd_rgw_pub_downlink, result.osd_rgw_cluster_uplink, result.osd_rgw_cluster_downlink, result.osd_rgw_lo);
 		}
 	}
 
 	return TRUE;
 }
 
-int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, double para3, double para4)
+int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, double para3, double para4, double para5)
 {
 	TCHAR szBuff[4096];
 
 	ListView_InsertItem(hwndListView, &lvi);
 	ListView_SetItemText(hwndListView, 0, 1, name);
 
-	swprintf(szBuff, L"%f", para1);
+	swprintf(szBuff, L"%.2f", para1);
 	ListView_SetItemText(hwndListView, 0, 2, szBuff);
-	swprintf(szBuff, L"%f", para2);
+	swprintf(szBuff, L"%.2f", para2);
 	ListView_SetItemText(hwndListView, 0, 3, szBuff);
-	swprintf(szBuff, L"%f", para3);
+	swprintf(szBuff, L"%.2f", para3);
 	ListView_SetItemText(hwndListView, 0, 4, szBuff);
-	swprintf(szBuff, L"%f", para4);
+	swprintf(szBuff, L"%.2f", para4);
 	ListView_SetItemText(hwndListView, 0, 5, szBuff);
+	swprintf(szBuff, L"%.2f", para5);
+	ListView_SetItemText(hwndListView, 0, 6, szBuff);
 
 	return 0;
 }
 
-int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, TCHAR para3[4096], TCHAR para4[4096])
+int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, TCHAR para3[4096], TCHAR para4[4096], TCHAR para5[4096])
 {
 	TCHAR szBuff[4096];
 
 	ListView_InsertItem(hwndListView, &lvi);
 	ListView_SetItemText(hwndListView, 0, 1, name);
 
-	swprintf(szBuff, L"%f", para1);
+	swprintf(szBuff, L"%.2f", para1);
 	ListView_SetItemText(hwndListView, 0, 2, szBuff);
-	swprintf(szBuff, L"%f", para2);
+	swprintf(szBuff, L"%.2f", para2);
 	ListView_SetItemText(hwndListView, 0, 3, szBuff);
 	ListView_SetItemText(hwndListView, 0, 4, para3);
 	ListView_SetItemText(hwndListView, 0, 5, para4);
+	ListView_SetItemText(hwndListView, 0, 6, para4);
 
 	return 0;
 }

@@ -64,6 +64,7 @@ typedef struct simulator_result
 	double osd_uplink;
 	double osd_rgw_downlink;
 	double osd_rgw_uplink;
+	double osd_rgw_lo;
 	double osd_lb_downlink;
 	double osd_lb_uplink;
 
@@ -77,8 +78,10 @@ bool cluster_configuration::check_valid()
 	bool flag = true;
 
 	if (replica > 16 || replica < 1)flag = false;
-	if (erasure_code_k > 16 || erasure_code_k < 1)flag = false;;
+	if (erasure_code_k > 16 || erasure_code_k < 1)flag = false;
 	if (erasure_code_m > 4 || erasure_code_m < 0)flag = false;
+
+	if (rgw_cnt < 1 && osd_rgw_mixcnt < 1 && lb_cnt < 1 && osd_lb_mixcnt < 1)flag = false;
 
 	return flag;
 }
