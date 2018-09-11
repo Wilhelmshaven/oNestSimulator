@@ -49,6 +49,7 @@ int getEditBoxText(HWND hdlg, int ID);
 int oNestSimulator(cluster_configuration cluster);
 BOOL AddListViewItems(HWND hwndListView);
 int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, double para3, double para4, double para5);
+int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, TCHAR para3[4096], TCHAR para4[4096], double para5);
 int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, TCHAR para3[4096], TCHAR para4[4096], TCHAR para5[4096]);
 
 /*============================== WinMain ==============================*/
@@ -525,7 +526,7 @@ int oNestSimulator(cluster_configuration cluster)
 	// OSD节点，同样需要考虑单独和混部
 	// 业务网下行=单个RGW出口流量*RGW数量/OSD数量
 	// 混部走lo这个事会在后面单独处理
-	// 业务网下行为0
+	// 业务网下行，为0
 	result.osd_pub_downlink = result.rgw_pub_uplink*(cluster.rgw_cnt + cluster.osd_rgw_mixcnt) / (cluster.osd_cnt + cluster.osd_lb_mixcnt + cluster.osd_rgw_mixcnt);
 	result.osd_pub_uplink = 0;
 	if (result.osd_pub_downlink > max)max = result.osd_pub_downlink;
@@ -542,7 +543,10 @@ int oNestSimulator(cluster_configuration cluster)
 	else
 	{
 		// 纠删码
-		result.osd_cluster_uplink = result.osd_pub_downlink*((cluster.erasure_code_k + cluster.erasure_code_m - 1) / cluster.erasure_code_k);
+		double ec_factor = cluster.erasure_code_k + cluster.erasure_code_m - 1;
+		ec_factor /= cluster.erasure_code_k;
+
+		result.osd_cluster_uplink = result.osd_pub_downlink*ec_factor;
 		result.osd_cluster_downlink = result.osd_cluster_uplink;
 	}
 	if (result.osd_cluster_uplink > max)max = result.osd_cluster_uplink;
@@ -618,7 +622,10 @@ int oNestSimulator(cluster_configuration cluster)
 	}
 	else
 	{
-		result.osd_limit /= (cluster.erasure_code_k + cluster.erasure_code_m);
+		double ec_factor = cluster.erasure_code_k + cluster.erasure_code_m;
+		ec_factor /= cluster.erasure_code_k;
+
+		result.osd_limit /= ec_factor;
 	}
 	if (factor > result.osd_limit)
 	{
@@ -660,14 +667,14 @@ int oNestSimulator(cluster_configuration cluster)
 
 		if (cluster.osd_rgw_mixcnt > 0)
 		{
-			result.osd_rgw_downlink = result.osd_downlink + result.rgw_pub_downlink;
-			result.osd_rgw_uplink = result.osd_uplink + result.rgw_pub_uplink;
+			result.osd_rgw_downlink = result.osd_rgw_pub_downlink + result.osd_rgw_cluster_downlink;
+			result.osd_rgw_uplink = result.osd_rgw_pub_uplink + result.osd_rgw_cluster_uplink;
 		}
 
 		if (cluster.osd_lb_mixcnt > 0)
 		{
-			result.osd_lb_downlink = result.osd_downlink + result.lb_pub_downlink;
-			result.osd_lb_uplink = result.osd_uplink + result.lb_pub_uplink;;
+			result.osd_lb_downlink = result.osd_lb_cluster_downlink + result.osd_lb_pub_downlink;
+			result.osd_lb_uplink = result.osd_lb_cluster_uplink + result.osd_lb_pub_uplink;
 		}
 	}
 
@@ -755,7 +762,7 @@ BOOL AddListViewItems(HWND hwndListView)
 	{
 		if (!cluster_conf.divided_network)
 		{
-			itemTextSet(hwndListView, lvi, L"OSD/RGW", result.osd_rgw_uplink, result.osd_rgw_downlink, L"-", L"-", L"-");
+			itemTextSet(hwndListView, lvi, L"OSD/RGW", result.osd_rgw_uplink, result.osd_rgw_downlink, L"-", L"-", result.osd_rgw_lo);
 		}
 		else
 		{
@@ -781,6 +788,25 @@ int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, d
 	ListView_SetItemText(hwndListView, 0, 4, szBuff);
 	swprintf(szBuff, L"%.2f", para4);
 	ListView_SetItemText(hwndListView, 0, 5, szBuff);
+	swprintf(szBuff, L"%.2f", para5);
+	ListView_SetItemText(hwndListView, 0, 6, szBuff);
+
+	return 0;
+}
+
+int itemTextSet(HWND hwndListView, LVITEM lvi, TCHAR name[4096], double para1, double para2, TCHAR para3[4096], TCHAR para4[4096], double para5)
+{
+	TCHAR szBuff[4096];
+
+	ListView_InsertItem(hwndListView, &lvi);
+	ListView_SetItemText(hwndListView, 0, 1, name);
+
+	swprintf(szBuff, L"%.2f", para1);
+	ListView_SetItemText(hwndListView, 0, 2, szBuff);
+	swprintf(szBuff, L"%.2f", para2);
+	ListView_SetItemText(hwndListView, 0, 3, szBuff);
+	ListView_SetItemText(hwndListView, 0, 4, para3);
+	ListView_SetItemText(hwndListView, 0, 5, para4);
 	swprintf(szBuff, L"%.2f", para5);
 	ListView_SetItemText(hwndListView, 0, 6, szBuff);
 
